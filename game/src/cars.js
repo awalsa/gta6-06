@@ -393,6 +393,18 @@ export function init(ctx) {
       const wheels = car.mesh.userData.wheels || [];
       for (const w of wheels) w.rotation.x += (car.speed / 0.38) * dt;
 
+      // Keep the player mesh glued to the car while driving. The mesh is
+      // hidden in-car, but sidejobs.js (whereIsPlayer) and missions.js
+      // (playerPos) read player.mesh.position for proximity checks — a mesh
+      // left at the board point made taxi dropoffs, deliveries and mission
+      // deliver steps unreachable while driving (verified live: car +
+      // state.playerPos at the destination, job still active until the mesh
+      // was moved there too). Syncing here fixes every mesh reader at once.
+      if (ctx.player && ctx.player.mesh) {
+        ctx.player.mesh.position.set(car.pos.x, 0, car.pos.z);
+        ctx.player.mesh.rotation.y = car.heading;
+      }
+
       // Exhaust smoke puffs while accelerating.
       this._exhaustT -= dt;
       if (fwdIn && this._exhaustT <= 0) {

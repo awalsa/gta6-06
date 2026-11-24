@@ -689,52 +689,83 @@ function startMission(i, ctx) {
 
 function ensureHud() {
   if (typeof document === 'undefined') return;
-  if (hudEl && document.body.contains(hudEl)) return;
+  if (hudEl && document.body.contains(hudEl) && hudEl._titleEl) return;
   hudEl = document.getElementById('mission-tracker');
   if (!hudEl) {
     hudEl = document.createElement('div');
     hudEl.id = 'mission-tracker';
-    hudEl.style.cssText = [
-      'position:fixed', 'top:12px', 'left:14px', 'z-index:55',
-      'background:rgba(10,10,18,0.75)', 'color:#fff', 'padding:10px 12px',
-      'border-radius:10px', 'border:1px solid rgba(255,255,255,0.18)',
-      'font-family:system-ui,sans-serif', 'font-size:14px', 'line-height:1.5',
-      'max-width:320px', 'pointer-events:none', 'display:none',
-    ].join(';');
-    const title = document.createElement('div');
-    title.id = 'mission-title';
-    title.style.cssText = 'font-weight:700;color:#ffd34d;';
-    hudLabelEl = document.createElement('div');
-    hudLabelEl.id = 'mission-label';
-    hudDistEl = document.createElement('div');
-    hudDistEl.id = 'mission-distance';
-    hudDistEl.style.cssText = 'color:#9fd8ff;';
-    hudTimerEl = document.createElement('div');
-    hudTimerEl.id = 'mission-timer';
-    hudTimerEl.style.cssText = 'color:#ff9d9d;font-weight:700;';
-    hudArrowEl = document.createElement('div');
-    hudArrowEl.id = 'mission-arrow';
-    hudArrowEl.textContent = '▲';
-    hudArrowEl.style.cssText = 'font-size:22px;color:#ffd34d;text-align:center;transition:transform 0.1s linear;';
-    hudEl.appendChild(title);
-    hudEl.appendChild(hudLabelEl);
-    hudEl.appendChild(hudDistEl);
-    hudEl.appendChild(hudTimerEl);
-    hudEl.appendChild(hudArrowEl);
     document.body.appendChild(hudEl);
-    hudEl._titleEl = title;
-  } else {
-    hudLabelEl = hudEl.querySelector('#mission-label');
-    hudDistEl = hudEl.querySelector('#mission-distance');
-    hudTimerEl = hudEl.querySelector('#mission-timer');
-    hudArrowEl = hudEl.querySelector('#mission-arrow');
   }
+  // index.html pre-defines an empty #mission-tracker div, so the old code
+  // took the "exists" branch, found no children, and updateHud wrote the
+  // mission title/step/distance into nothing: the tracker sat empty (and
+  // the HUD kept saying "No active mission") for the whole mission.
+  // Build the children whenever they are missing, whichever branch ran.
+  hudEl.style.cssText = [
+    'position:fixed', 'top:12px', 'left:14px', 'z-index:55',
+    'background:rgba(10,10,18,0.75)', 'color:#fff', 'padding:10px 12px',
+    'border-radius:10px', 'border:1px solid rgba(255,255,255,0.18)',
+    'font-family:system-ui,sans-serif', 'font-size:14px', 'line-height:1.5',
+    'max-width:320px', 'pointer-events:none', 'display:none',
+  ].join(';');
+  const need = (id) => {
+    let el = hudEl.querySelector('#' + id);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = id;
+      hudEl.appendChild(el);
+    }
+    return el;
+  };
+  const title = need('mission-title');
+  title.style.cssText = 'font-weight:700;color:#ffd34d;';
+  hudLabelEl = need('mission-label');
+  hudDistEl = need('mission-distance');
+  hudDistEl.style.cssText = 'color:#9fd8ff;';
+  hudTimerEl = need('mission-timer');
+  hudTimerEl.style.cssText = 'color:#ff9d9d;font-weight:700;';
+  hudArrowEl = need('mission-arrow');
+  if (!hudArrowEl.textContent) hudArrowEl.textContent = '▲';
+  hudArrowEl.style.cssText = 'font-size:22px;color:#ffd34d;text-align:center;transition:transform 0.1s linear;';
+  hudEl._titleEl = title;
 }
 
+let publishedMission = null; // single object shared with hud.js via state.currentMission
+
 function updateHud(ctx) {
+  // Publish the active mission to shared state so hud.js's #hud-mission
+  // tracker (which reads state.currentMission) shows the mission instead
+  // of "No active mission" — nothing ever wrote that field, so the HUD
+  // said "No active mission" for the whole mission. One object, mutated
+  // in place, so updateHudDistance's distance survives the next update.
+  const c = ctx || boundCtx;
+  const s = c ? c.state : null;
+  if (s) {
+    if (!current) {
+      s.currentMission = null;
+      publishedMission = null;
+    } else {
+      if (!publishedMission) {
+        publishedMission = {};
+        s.currentMission = publishedMission;
+      }
+      const step = activeStep();
+      const count = step && (step.kind === 'collect' || step.kind === 'clear')
+        ? ` (${stepProgress}/${step.count || 1})` : '';
+      publishedMission.name = current.name;
+      publishedMission.stepLabel = step
+        ? `Step ${stepIndex + 1}/${current.steps.length}: ${step.label}${count}` : '';
+      publishedMission.timeLeft = current.timed ? timeLeft : null;
+    }
+  }
   if (typeof document === 'undefined') return;
   ensureHud();
   if (!hudEl) return;
+  // One mission panel at a time: hud.js's #hud-mission sits at the same
+  // top-left spot and shows the same info (now that we publish it), so
+  // hide it while a mission is active and restore it when idle.
+  const hudMission = document.getElementById('hud-mission');
+  if (hudMission) hudMission.style.display = current ? 'none' : '';
   if (!current) {
     hudEl.style.display = 'none';
     return;
@@ -759,6 +790,7 @@ function updateHudDistance(ctx, target) {
   const c = ctx || boundCtx;
   const pPos = playerPos(c);
   const dist = Math.round(pPos.distanceTo(target));
+  if (publishedMission) publishedMission.distance = dist;
   if (hudDistEl) hudDistEl.textContent = `${dist}m — ${landmarkName(activeStep() ? activeStep().at : '')}`;
   if (hudArrowEl && c && c.camera) {
     // Arrow points toward the marker relative to the camera's facing.

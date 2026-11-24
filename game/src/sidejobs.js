@@ -125,11 +125,18 @@ function toast(ctx, msg) {
 
 function showPrompt(msg) {
   if (typeof document === 'undefined') return;
-  let el = document.getElementById('hud-prompt');
+  // Own element, NOT #hud-prompt: that id is shared by casino, interiors,
+  // plane, properties and shops, which all overwrite it every frame (shops
+  // runs last in main.js), so a sidejobs prompt written there was erased in
+  // the same frame and the taxi/delivery cue never showed on screen even
+  // though F itself worked (verified live: prompt '' for 6s at distance 0,
+  // first F tap still started the job). This one sits just above the
+  // shared line so both can show without overlapping.
+  let el = document.getElementById('hud-prompt-sidejobs');
   if (!el) {
     el = document.createElement('div');
-    el.id = 'hud-prompt';
-    el.style.cssText = 'position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);color:#ffe9a8;padding:6px 12px;border-radius:6px;font:13px sans-serif;z-index:9998;pointer-events:none;';
+    el.id = 'hud-prompt-sidejobs';
+    el.style.cssText = 'position:fixed;bottom:112px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);color:#ffe9a8;padding:6px 12px;border-radius:6px;font:13px sans-serif;z-index:9998;pointer-events:none;';
     document.body.appendChild(el);
   }
   el.textContent = msg || '';
@@ -194,7 +201,14 @@ function makePassenger(color) {
 let S = null;
 
 export function init(ctx) {
-  const taxiMarkerPos = landmarkPos('plaza').add(new THREE.Vector3(6, 0, 0));
+  // Taxi marker: 14 units east of the Plaza Tower centre. The tower's own
+  // collision box spans x/z -10..+10, so the old offset (+6,0,0) sat INSIDE
+  // the tower: the player was pushed out to x=10.5, 4.5 units away — outside
+  // the 4-unit F radius — and F could never start the job (verified live:
+  // prompt empty, taxiActive stayed false through taps and a 3s hold).
+  // +14 keeps the marker on the plaza pad but clear of the tower, matching
+  // how the interior doors sit just outside their buildings' footprints.
+  const taxiMarkerPos = landmarkPos('plaza').add(new THREE.Vector3(14, 0, 0));
   const deliveryMarkerPos = landmarkPos('market').add(new THREE.Vector3(-8, 0, 0));
 
   S = {
